@@ -12,11 +12,28 @@ const Home = () => {
     PublishedDate: "",
   });
 
+  // store selected file separately
+  const [profileFile, setProfileFile] = useState(null);
+
+  // Optional local preview URL
+  const [previewUrl, setPreviewUrl] = useState(null);
+
   // -----------------------------
   // Handle Input Change
   // -----------------------------
   const handleChange = (e) => {
     setBookData({ ...bookData, [e.target.name]: e.target.value });
+  };
+
+  const handleFileChange = (e) => {
+    const file = e.target.files[0] || null;
+    setProfileFile(file);
+    if (file) {
+      const url = URL.createObjectURL(file);
+      setPreviewUrl(url);
+    } else {
+      setPreviewUrl(null);
+    }
   };
 
   // -----------------------------
@@ -38,10 +55,21 @@ const Home = () => {
     }
 
     try {
+      // Use FormData to include file (ProfileImage)
+      const formData = new FormData();
+      formData.append("BookName", bookData.BookName);
+      formData.append("BookTitle", bookData.BookTitle);
+      formData.append("BookAuthor", bookData.BookAuthor);
+      formData.append("BookPrice", bookData.BookPrice);
+      formData.append("PublishedDate", bookData.PublishedDate);
+      if (profileFile) {
+        formData.append("ProfileImage", profileFile);
+      }
+
       const response = await fetch("http://localhost:5000/api/books/addbook", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(bookData),
+        // DO NOT set Content-Type header; browser will set the correct multipart boundary
+        body: formData,
       });
 
       const data = await response.json();
@@ -61,6 +89,8 @@ const Home = () => {
         BookPrice: "",
         PublishedDate: "",
       });
+      setProfileFile(null);
+      setPreviewUrl(null);
 
       fetchBooks(); // Refresh table
     } catch (error) {
@@ -69,25 +99,64 @@ const Home = () => {
     }
   };
 
-  // -----------------------------
-  // Fetch All Books
-  // -----------------------------
-  const fetchBooks = async () => {
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(5);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalBooks, setTotalBooks] = useState(0);
+
+  const fetchBooks = async (page = currentPage, size = pageSize) => {
     try {
-      const response = await fetch("http://localhost:5000/api/books/getbook", {
-        method: "GET",
-        headers: { "Content-Type": "application/json" },
-      });
+      const response = await fetch(
+        `http://localhost:5000/api/books/getbook?page=${page}&pageSize=${size}`,
+        {
+          method: "GET",
+          headers: { "Content-Type": "application/json" },
+        }
+      );
 
       const data = await response.json();
 
       if (response.ok) {
-        setBookList(data.books);
+        setBookList(data.books || []);
+        setTotalBooks(data.totalBooks || 0);
+        setTotalPages(data.totalPages || 1);
+        setCurrentPage(data.currentPage || page);
+      } else {
+        toast.error(data.message || "Failed to fetch books");
       }
     } catch (error) {
       toast.error("Failed to fetch books");
       console.error("Error fetching books:", error);
     }
+  };
+
+  useEffect(() => {
+    fetchBooks(1, pageSize);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Pagination helpers
+  const handlePrevPage = () => {
+    if (currentPage > 1) {
+      fetchBooks(currentPage - 1, pageSize);
+    }
+  };
+
+  const handleNextPage = () => {
+    if (currentPage < totalPages) {
+      fetchBooks(currentPage + 1, pageSize);
+    }
+  };
+
+  const handleGoToPage = (page) => {
+    if (page >= 1 && page <= totalPages) {
+      fetchBooks(page, pageSize);
+    }
+  };
+
+  const handleChangePageSize = (size) => {
+    setPageSize(size);
+    fetchBooks(1, size);
   };
 
   const handleDeleteBook = async (Id) => {
@@ -111,22 +180,9 @@ const Home = () => {
   };
 
   // Load books on page load
-  useEffect(() => {
-    fetchBooks();
-  }, []);
 
   return (
     <>
-      {/* Hero Section */}
-      <div className="home flex flex-col items-center py-16 justify-center bg-gradient-to-r from-blue-50 to-purple-50">
-        <h2 className="text-4xl font-bold mb-3 text-gray-800">
-          Welcome to the Home Page
-        </h2>
-        <p className="text-lg text-gray-600">
-          This is the main content of the home page.
-        </p>
-      </div>
-
       {/* Form Section */}
       <div className="flex justify-center py-10 bg-white">
         <form
@@ -137,7 +193,7 @@ const Home = () => {
             Add a New Book
           </h3>
 
-          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
             {/* Book Name */}
             <div className="mb-4">
               <label className="block text-gray-700 mb-1">Book Name</label>
@@ -197,6 +253,25 @@ const Home = () => {
                 className="w-full p-3 border rounded-md focus:ring-2 focus:ring-blue-400"
               />
             </div>
+
+            {/* Profile Image Upload */}
+            <div className="mb-4">
+              <label className="block text-gray-700 mb-1">Profile Image</label>
+              <input
+                type="file"
+                accept="image/*"
+                name="ProfileImage"
+                onChange={handleFileChange}
+                className="w-full p-1 border rounded-md"
+              />
+              {previewUrl && (
+                <img
+                  src={previewUrl}
+                  alt="preview"
+                  className="mt-2 h-20 w-20 object-cover rounded-md"
+                />
+              )}
+            </div>
           </div>
 
           <button
@@ -210,9 +285,8 @@ const Home = () => {
 
       {/* Table Section */}
       <div className="w-[90%] mx-auto mb-20">
-        <h3 className="text-2xl font-semibold mb-4 text-gray-800">
+        <h3 className="text-2xl font-semibold mb-4 text-gray-800"></h3>
           Books List
-        </h3>
 
         <div className="overflow-x-auto rounded-lg shadow-lg">
           <table className="min-w-full bg-white border border-gray-200">
@@ -221,6 +295,7 @@ const Home = () => {
                 <th className="py-3 px-4 border">#</th>
                 <th className="py-3 px-4 border">Book Name</th>
                 <th className="py-3 px-4 border">Title</th>
+                <th className="py-3 px-4 border">Profile Image</th>
                 <th className="py-3 px-4 border">Author</th>
                 <th className="py-3 px-4 border">Price</th>
                 <th className="py-3 px-4 border">Published Date</th>
@@ -231,7 +306,7 @@ const Home = () => {
             <tbody>
               {bookList.length === 0 ? (
                 <tr>
-                  <td colSpan="7" className="text-center py-5 text-gray-500">
+                  <td colSpan="8" className="text-center py-5 text-gray-500">
                     No books found
                   </td>
                 </tr>
@@ -244,6 +319,17 @@ const Home = () => {
                     <td className="py-2 px-4 border">{idx + 1}</td>
                     <td className="py-2 px-4 border">{book.BookName}</td>
                     <td className="py-2 px-4 border">{book.BookTitle}</td>
+                    <td className="py-2 px-4 border">
+                      {book.ProfileImage ? (
+                        <img
+                          src={book.ProfileImage}
+                          alt={book.BookName || "profile"}
+                          className="h-12 w-12 object-cover rounded-full mx-auto"
+                        />
+                      ) : (
+                        <span className="text-gray-400">—</span>
+                      )}
+                    </td>
                     <td className="py-2 px-4 border">{book.BookAuthor}</td>
                     <td className="py-2 px-4 border">Rs {book.BookPrice}</td>
                     <td className="py-2 px-4 border">
@@ -267,8 +353,42 @@ const Home = () => {
               )}
             </tbody>
           </table>
+
+          {/* add pagination button control */}
+          {totalPages > 1 && (
+            <div className="flex justify-center items-center space-x-3 mt-4">
+              <button
+                onClick={handlePrevPage}
+                disabled={currentPage === 1}
+                className="px-4 py-2 bg-gray-300 rounded disabled:opacity-50"
+              >
+                Prev
+              </button>
+              {[...Array(totalPages)].map((_, index) => (
+                <button
+                  key={index}
+                  onClick={() => handleGoToPage(index + 1)}
+                  className={`px-4 py-2 rounded ${
+                    currentPage === index + 1
+                      ? "bg-blue-600 text-white"
+                      : "bg-gray-300"
+                  }`}
+                >
+                  {index + 1}
+                </button>
+              ))}
+              <button
+                onClick={handleNextPage}
+                disabled={currentPage === totalPages}
+                className="px-4 py-2 bg-gray-300 rounded disabled:opacity-50"
+              >
+                Next
+              </button>
+            </div>
+          )}
         </div>
-      </div>
+
+    </div>
     </>
   );
 };
